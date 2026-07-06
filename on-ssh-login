@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# INSTRUCTIONS
+
+## 1. Copy script to /bin
+## 2. Add this to /etc/pam.d/sshd
+##      session optional pam_exec.so /bin/on-ssh-login
+## 3. sudo chmod +x /bin/on-ssh-*
+
+# Script ====================
+
+[[ "${PAM_TYPE}" != "open_session" ]] && exit 0
+
+set -euo pipefail
+source /etc/on-ssh-login.env
+
+topic=security
+timestamp=$(TZ="America/Toronto" date "+%Y-%m-%d %H:%M %Z")
+
+curl -fsS \
+    -H "Title: SSH login on $(hostname)" \
+    -H "Priority: high" \
+    -H "Tags: key" \
+    -d "${PAM_USER} from ${PAM_RHOST} at ${timestamp}" \
+    "$NTFY_URL/$topic?auth=$NTFY_TOKEN64" >/dev/null
