@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# Wrapper for brightnessctl
+
+# TODO:
+# Add shortcuts to common subcommands
+
+echo "brightnessctl set $1%"
+brightnessctl set "$1%"
