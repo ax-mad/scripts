@@ -1,6 +1,0 @@
-# set -x
-gum spin --title="p1" --show-output -- sleep 1 && echo done &
-gum spin --title="p2" --show-output -- sleep 2 && echo done &
-gum spin --title="p3" --show-output -- sleep 4 && echo done &
-gum spin --title="p3" --show-output --timeout=6s -- sleep 10 &
-wait

@@ -1,6 +1,0 @@
-#!/bin/bash
-
-TRUE_APP='/var/lib/snapd/snap/bin/pgadmin4'
-
-# run in background, immortal, and redirect output to logs
-nohup $TRUE_APP > "$LOGS/pgadmin.log" &

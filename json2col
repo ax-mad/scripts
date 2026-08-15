@@ -1,5 +1,0 @@
-#!/bin/bash
-
-[[ ! -e "$1" ]] && echo "file $1 does not exist" && exit 1
-
-yq "$1" -o t | column -t -s$'\t' | less

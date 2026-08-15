@@ -1,6 +1,0 @@
-#!/bin/bash
-
-output=$(fzf)
-
-echo "$output" | xclip -selection clipboard
->&2 echo "Copied: $output"

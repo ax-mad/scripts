@@ -4,9 +4,10 @@ set -euo pipefail
 # =============================================================================
 # hostcfg — Hostfile runner
 #
-# Usage: hostcfg [directory]
+# Environment:
+#   HOSTFILE   path to the Hostfile (default: ~/etc/Hostfile)
 #
-# Looks for Hostfile or Hostconfig in the given directory, or $PWD by default.
+# Usage: hostcfg
 # =============================================================================
 
 
@@ -14,9 +15,12 @@ set -euo pipefail
 # Environment
 # -----------------------------------------------------------------------------
 
-export ROOT="${1:-${PWD}}"
-export BIN="${HOME}/etc/.bin"
-export DSL="${HOME}/etc/.dsl"
+export HOSTFILE="${HOSTFILE:-${HOME}/etc/Hostfile}"
+export ROOT
+ROOT="$(dirname "${HOSTFILE}")"
+
+export BIN="${ROOT}/.bin"
+export DSL="${ROOT}/.dsl"
 export gum="${BIN}/gum"
 
 export GUM_SPIN_SPINNER=meter
@@ -26,15 +30,15 @@ export GUM_SPIN_SHOW_ERROR=true
 
 
 # -----------------------------------------------------------------------------
-# Output
+# Bootstrap output
 #
-# Defined early so they are available before the DSL is sourced.
-# The DSL may redefine these if it provides richer implementations.
+# Simple stubs available before the DSL is sourced.
+# The DSL may provide richer implementations of msg/warn/error.
 # -----------------------------------------------------------------------------
 
-_msg()   { printf '\033[92m✓ %s\033[0m\n' "$*";      }
-_warn()  { printf '\033[93m! %s\033[0m\n' "$*" >&2;  }
-_error() { printf '\033[91m✗ %s\033[0m\n' "$*" >&2;  }
+_msg()   { printf '\033[92m✓ %s\033[0m\n' "$*";     }
+_warn()  { printf '\033[93m! %s\033[0m\n' "$*" >&2; }
+_error() { printf '\033[91m✗ %s\033[0m\n' "$*" >&2; }
 
 
 # -----------------------------------------------------------------------------
@@ -57,7 +61,7 @@ _load_dsl() {
 
 
 # -----------------------------------------------------------------------------
-# Internet
+# gum
 # -----------------------------------------------------------------------------
 
 _gum() {
@@ -70,6 +74,11 @@ _gum() {
         return 1
     fi
 }
+
+
+# -----------------------------------------------------------------------------
+# Internet
+# -----------------------------------------------------------------------------
 
 _check_internet() {
     local -a probe
@@ -99,12 +108,8 @@ _check_internet() {
         --header "Internet is unavailable")" || true
 
     case "${answer}" in
-        "Continue in offline mode")
-            return 0
-            ;;
-        "Exit")
-            exit 0
-            ;;
+        "Continue in offline mode") return 0  ;;
+        "Exit")                     exit 0    ;;
         *)
             _error "internet: unexpected selection"
             return 1
@@ -114,10 +119,77 @@ _check_internet() {
 
 
 # -----------------------------------------------------------------------------
+# Self-update
+#
+# Syncs ROOT with its git remote before the Hostfile is sourced, so the
+# Hostfile itself is always up to date. Replaces:
+#
+#   sync ~/etc from 'github:axjab/dotfiles'
+#
+# If hostcfg itself was updated by the pull, the change takes effect on the
+# next invocation — the running process is not re-executed.
+# -----------------------------------------------------------------------------
+
+_self_update() {
+    if ! git -C "${ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        _warn "self-update: ${ROOT} is not a git repository — skipping"
+        return 0
+    fi
+
+    # Commit and push any local changes before pulling.
+    if ! git -C "${ROOT}" diff-index --quiet HEAD -- 2>/dev/null; then
+        _warn "Local changes detected in ${ROOT}:"
+        git -C "${ROOT}" status --short >&2
+
+        if _gum confirm "Commit and push local changes?"; then
+            # local commit_msg
+            # commit_msg="$(_gum input --placeholder "Commit message")"
+            # commit_msg="${commit_msg:-hostcfg: auto-commit}"
+
+            git -C "${ROOT}" add -A
+            git -C "${ROOT}" commit -v # -m "${commit_msg}"
+            git -C "${ROOT}" push
+        fi
+    fi
+
+    # Fetch remote.
+    GIT_TERMINAL_PROMPT=0 git -C "${ROOT}" fetch 2>/dev/null || {
+        _warn "self-update: fetch failed — continuing with local version"
+        return 0
+    }
+
+    local local_rev remote_rev
+    local_rev="$(git -C "${ROOT}" rev-parse '@')"
+    remote_rev="$(git -C "${ROOT}" rev-parse '@{u}' 2>/dev/null)" || {
+        _warn "self-update: no upstream tracking branch — skipping merge"
+        return 0
+    }
+
+    if [[ "${local_rev}" == "${remote_rev}" ]]; then
+        _msg "self-update: up to date"
+        return 0
+    fi
+
+    git -C "${ROOT}" merge --ff-only >/dev/null 2>&1 || {
+        _warn "self-update: cannot fast-forward — skipping merge"
+        return 0
+    }
+
+    _msg "self-update: updated"
+}
+
+
+# -----------------------------------------------------------------------------
 # Hostfile
 # -----------------------------------------------------------------------------
 
 _find_hostfile() {
+    if [[ -f "${HOSTFILE}" ]]; then
+        printf '%s' "${HOSTFILE}"
+        return 0
+    fi
+
+    # Fallback: search ROOT for known filenames.
     local f
     for f in Hostfile Hostconfig; do
         if [[ -f "${ROOT}/${f}" ]]; then
@@ -126,7 +198,7 @@ _find_hostfile() {
         fi
     done
 
-    _error "No Hostfile or Hostconfig found in: ${ROOT}"
+    _error "Hostfile not found (HOSTFILE=${HOSTFILE})"
     return 1
 }
 
@@ -138,11 +210,10 @@ _find_hostfile() {
 _main() {
     _load_dsl
     _check_internet
+    _self_update
 
     local hostfile
     hostfile="$(_find_hostfile)"
-
-    _msg "Running ${hostfile}"
 
     # shellcheck source=/dev/null
     source "${hostfile}"
