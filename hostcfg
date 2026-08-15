@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# =============================================================================
+# hostcfg — Hostfile runner
+#
+# Usage: hostcfg [directory]
+#
+# Looks for Hostfile or Hostconfig in the given directory, or $PWD by default.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Environment
+# -----------------------------------------------------------------------------
+
+export ROOT="${1:-${PWD}}"
+export BIN="${HOME}/etc/.bin"
+export DSL="${HOME}/etc/.dsl"
+export gum="${BIN}/gum"
+
+export GUM_SPIN_SPINNER=meter
+export GUM_SPIN_ALIGN=left
+export GUM_SPIN_TIMEOUT=300s
+export GUM_SPIN_SHOW_ERROR=true
+
+
+# -----------------------------------------------------------------------------
+# Output
+#
+# Defined early so they are available before the DSL is sourced.
+# The DSL may redefine these if it provides richer implementations.
+# -----------------------------------------------------------------------------
+
+_msg()   { printf '\033[92m✓ %s\033[0m\n' "$*";      }
+_warn()  { printf '\033[93m! %s\033[0m\n' "$*" >&2;  }
+_error() { printf '\033[91m✗ %s\033[0m\n' "$*" >&2;  }
+
+
+# -----------------------------------------------------------------------------
+# DSL
+# -----------------------------------------------------------------------------
+
+_load_dsl() {
+    if [[ ! -d "${DSL}" ]]; then
+        _error "DSL directory not found: ${DSL}"
+        return 1
+    fi
+
+    local f
+    for f in "${DSL}"/*.sh; do
+        [[ -f "${f}" ]] || continue
+        # shellcheck source=/dev/null
+        source "${f}"
+    done
+}
+
+
+# -----------------------------------------------------------------------------
+# Internet
+# -----------------------------------------------------------------------------
+
+_gum() {
+    if [[ -x "${gum}" ]]; then
+        "${gum}" "$@"
+    elif command -v gum >/dev/null 2>&1; then
+        gum "$@"
+    else
+        _error "gum is not available"
+        return 1
+    fi
+}
+
+_check_internet() {
+    local -a probe
+
+    if command -v curl >/dev/null 2>&1; then
+        probe=(curl -fsS --connect-timeout 5 --max-time 10
+               https://connectivitycheck.gstatic.com/generate_204)
+    elif command -v wget >/dev/null 2>&1; then
+        probe=(wget -q --timeout=10 --tries=1 -O /dev/null
+               https://connectivitycheck.gstatic.com/generate_204)
+    else
+        _error "internet: neither curl nor wget is available"
+        return 1
+    fi
+
+    if "${probe[@]}" >/dev/null 2>&1; then
+        _msg "Internet connected"
+        return 0
+    fi
+
+    _warn "Internet unavailable"
+
+    local answer
+    answer="$(_gum choose \
+        "Continue in offline mode" \
+        "Exit" \
+        --header "Internet is unavailable")" || true
+
+    case "${answer}" in
+        "Continue in offline mode")
+            return 0
+            ;;
+        "Exit")
+            exit 0
+            ;;
+        *)
+            _error "internet: unexpected selection"
+            return 1
+            ;;
+    esac
+}
+
+
+# -----------------------------------------------------------------------------
+# Hostfile
+# -----------------------------------------------------------------------------
+
+_find_hostfile() {
+    local f
+    for f in Hostfile Hostconfig; do
+        if [[ -f "${ROOT}/${f}" ]]; then
+            printf '%s' "${ROOT}/${f}"
+            return 0
+        fi
+    done
+
+    _error "No Hostfile or Hostconfig found in: ${ROOT}"
+    return 1
+}
+
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+
+_main() {
+    _load_dsl
+    _check_internet
+
+    local hostfile
+    hostfile="$(_find_hostfile)"
+
+    _msg "Running ${hostfile}"
+
+    # shellcheck source=/dev/null
+    source "${hostfile}"
+}
+
+_main
