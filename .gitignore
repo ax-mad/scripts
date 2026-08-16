@@ -1,6 +1,1 @@
-# Ignore large (>100MB) executables here
-
-bw
-
-# idk where tf this comes from
-Pasted*
+# Large (>100MB) executables
