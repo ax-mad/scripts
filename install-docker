@@ -1,34 +1,178 @@
-# Add Docker's official GPG key:
-sudo apt update
-sudo apt install ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /usr/share/keyrings/docker-archive-keyring.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.asc
+#!/bin/bash
 
-# Add the repository to Apt sources:
-sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
+# updated 2026-08-28
+
+set -e
+
+DOCKER_REPO="https://download.docker.com/linux/debian"
+DOCKER_KEYRING="/etc/apt/keyrings/docker.asc"
+DOCKER_SOURCES="/etc/apt/sources.list.d/docker.sources"
+
+# ------------------------------------------------------------
+# Detect OS
+# ------------------------------------------------------------
+
+if [[ ! -r /etc/os-release ]]; then
+    echo "ERROR: /etc/os-release not found."
+    exit 1
+fi
+
+. /etc/os-release
+
+# ------------------------------------------------------------
+# Determine Debian base
+# ------------------------------------------------------------
+
+if [[ -n "${DEBIAN_CODENAME:-}" ]]; then
+    DEBIAN_BASE="$DEBIAN_CODENAME"
+elif [[ "${ID:-}" == "debian" && -n "${VERSION_CODENAME:-}" ]]; then
+    DEBIAN_BASE="$VERSION_CODENAME"
+else
+    echo "ERROR: Could not determine Debian base."
+    echo
+    echo "Detected:"
+    echo "  ID=${ID:-unknown}"
+    echo "  VERSION_CODENAME=${VERSION_CODENAME:-unknown}"
+    echo "  DEBIAN_CODENAME=${DEBIAN_CODENAME:-unknown}"
+    exit 1
+fi
+
+# ------------------------------------------------------------
+# Map Debian base to a Docker-supported repository
+# ------------------------------------------------------------
+
+case "$DEBIAN_BASE" in
+    bullseye)
+        DOCKER_CODENAME="bullseye"
+        ;;
+
+    bookworm)
+        DOCKER_CODENAME="bookworm"
+        ;;
+
+    trixie)
+        DOCKER_CODENAME="trixie"
+        ;;
+
+    sid)
+        # Docker does not publish a Sid repository.
+        # Use the newest supported Debian release.
+        DOCKER_CODENAME="trixie"
+        ;;
+
+    *)
+        echo "ERROR: Debian base '$DEBIAN_BASE' is not supported by"
+        echo "       Docker's official Debian repository."
+        echo
+        echo "Supported Docker repositories:"
+        echo "  bullseye"
+        echo "  bookworm"
+        echo "  trixie"
+        exit 1
+        ;;
+esac
+
+# ------------------------------------------------------------
+# Display detection results
+# ------------------------------------------------------------
+
+echo "Detected OS:       ${PRETTY_NAME:-unknown}"
+echo "OS codename:       ${VERSION_CODENAME:-unknown}"
+echo "Debian base:       ${DEBIAN_BASE}"
+echo "Docker repository: ${DOCKER_CODENAME}"
+
+if [[ "$DEBIAN_BASE" != "$DOCKER_CODENAME" ]]; then
+    echo
+    echo "NOTICE: Debian base '$DEBIAN_BASE' does not have a"
+    echo "        corresponding Docker repository."
+    echo "        Using Docker's '$DOCKER_CODENAME' repository."
+fi
+
+# ------------------------------------------------------------
+# Remove existing Docker repository configuration
+# ------------------------------------------------------------
+
+echo
+echo "Removing existing Docker repository configuration..."
+
+sudo rm -f \
+    "$DOCKER_SOURCES" \
+    /etc/apt/sources.list.d/docker.list
+
+# ------------------------------------------------------------
+# Install prerequisites
+# ------------------------------------------------------------
+
+echo
+echo "Installing prerequisites..."
+
+sudo apt update
+sudo apt install -y ca-certificates curl
+
+# ------------------------------------------------------------
+# Add Docker's official GPG key
+# ------------------------------------------------------------
+
+echo
+echo "Installing Docker GPG key..."
+
+sudo install -m 0755 -d /etc/apt/keyrings
+
+sudo curl -fsSL \
+    "${DOCKER_REPO}/gpg" \
+    -o "$DOCKER_KEYRING"
+
+sudo chmod a+r "$DOCKER_KEYRING"
+
+# ------------------------------------------------------------
+# Add Docker repository
+# ------------------------------------------------------------
+
+echo
+echo "Adding Docker repository..."
+
+sudo tee "$DOCKER_SOURCES" > /dev/null <<EOF
 Types: deb
-URIs: https://download.docker.com/linux/debian
-Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
+URIs: ${DOCKER_REPO}
+Suites: ${DOCKER_CODENAME}
 Components: stable
-Signed-By: /etc/apt/keyrings/docker.asc
+Architectures: $(dpkg --print-architecture)
+Signed-By: ${DOCKER_KEYRING}
 EOF
 
+# ------------------------------------------------------------
+# Update package lists
+# ------------------------------------------------------------
+
+echo
+echo "Updating package lists..."
+
 sudo apt update
 
-# ACTUAL INSTALLATION
+# ------------------------------------------------------------
+# Install Docker Engine
+# ------------------------------------------------------------
 
-sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+echo
+echo "Installing Docker Engine..."
 
+sudo apt install -y \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin
+
+# ------------------------------------------------------------
 # Test
+# ------------------------------------------------------------
 
-echo -e "\nTesting..."
-sleep 3
+echo
+echo "Testing Docker installation..."
+echo
 
-sudo systemctl status docker
+sudo systemctl status docker --no-pager
 
-echo "\nFinal test:"
-sleep 2
-
-sudo docker run hello-world
+echo
+echo "Docker version:"
+sudo docker --version
