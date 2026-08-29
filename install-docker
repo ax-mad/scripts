@@ -42,24 +42,10 @@ fi
 # ------------------------------------------------------------
 
 case "$DEBIAN_BASE" in
-    bullseye)
-        DOCKER_CODENAME="bullseye"
-        ;;
-
-    bookworm)
-        DOCKER_CODENAME="bookworm"
-        ;;
-
-    trixie)
-        DOCKER_CODENAME="trixie"
-        ;;
-
-    sid)
-        # Docker does not publish a Sid repository.
-        # Use the newest supported Debian release.
-        DOCKER_CODENAME="trixie"
-        ;;
-
+    bullseye) DOCKER_CODENAME="bullseye" ;;
+    bookworm) DOCKER_CODENAME="bookworm" ;;
+    trixie)   DOCKER_CODENAME="trixie"   ;;
+    sid)      DOCKER_CODENAME="trixie"   ;;
     *)
         echo "ERROR: Debian base '$DEBIAN_BASE' is not supported by"
         echo "       Docker's official Debian repository."
